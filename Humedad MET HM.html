@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitor de Humedad - Pilas</title>
+    
+    <!-- 1. Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        salmon: {
+                            DEFAULT: '#FA8072',
+                            dark: '#E97466'
+                        },
+                        oeste: {
+                            DEFAULT: '#6366f1', // Indigo para Oeste
+                            dark: '#4f46e5'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- 2. React & ReactDOM -->
+    <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    
+    <!-- 3. Prop-types -->
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+
+    <!-- 4. Recharts -->
+    <script src="https://cdn.jsdelivr.net/npm/recharts@2.10.3/umd/Recharts.min.js"></script>
+    
+    <!-- 5. Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* --- ESTILOS DE PANTALLA DE BLOQUEO (SOLICITADO) --- */
+        #landscape-warning {
+            display: none; /* Oculto en landscape/desktop por defecto */
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: #0f172a; /* Slate-900 para coincidir con tema oscuro */
+            z-index: 99999;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .lw-phone {
+            position: absolute;
+            width: 60px; height: 110px;
+            border: 3px solid #fff; border-radius: 12px;
+            left: calc(50% - 200px);
+            top: 50%;
+            transform: translateY(-50%);
+            transform-origin: center center;
+            animation: masterPhoneSequence 4s ease-in-out infinite;
+            opacity: 1;
+            box-shadow: 0 0 20px rgba(255,255,255,0.1);
+        }
+
+        .lw-line {
+            position: absolute;
+            width: 3px; height: 110px; background: #fff;
+            top: 50%; left: 50%;
+            transform: translateY(-50%);
+            border-radius: 2px;
+        }
+
+        .lw-text {
+            position: absolute;
+            top: 50%; left: calc(50% + 20px);
+            transform: translateY(-50%);
+            text-align: left;
+            font-family: 'ui-sans-serif', 'system-ui', 'sans-serif';
+            font-size: 1.2rem; font-weight: 800; text-transform: uppercase;
+            line-height: 1.2;
+            color: #fff;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+        }
+
+        @keyframes masterPhoneSequence {
+            0% { left: calc(50% - 200px); transform: translateY(-50%) rotate(0deg); opacity: 1; }
+            25% { left: calc(50% - 78px); transform: translateY(-50%) rotate(0deg); opacity: 1; }
+            50% { left: calc(50% - 78px); transform: translateY(-50%) rotate(-90deg); opacity: 1; }
+            80% { left: calc(50% + 20px); transform: translateY(-50%) rotate(-90deg); opacity: 0; }
+            100% { left: calc(50% + 20px); transform: translateY(-50%) rotate(-90deg); opacity: 0; }
+        }
+
+        /* --- MEDIA QUERIES ORIENTACIÓN --- */
+        @media only screen and (orientation: portrait) {
+            #landscape-warning { display: flex !important; }
+            #main-content { display: none !important; }
+        }
+
+        @media only screen and (orientation: landscape) {
+            #landscape-warning { display: none !important; }
+            #main-content { display: block !important; }
+        }
+
+        /* --- ESTILOS DE IMPRESIÓN --- */
+        @media print {
+            @page { 
+                size: landscape; 
+                margin: 5mm; 
+            }
+            body { 
+                -webkit-print-color-adjust: exact; 
+                print-color-adjust: exact;
+                background-color: white !important;
+                margin: 0;
+                padding: 0;
+                width: 100vw;
+                height: 100vh;
+                overflow: hidden; 
+            }
+            .no-print { display: none !important; }
+            #landscape-warning { display: none !important; } /* Asegurar que no salga en impresión */
+            #main-content { display: block !important; width: 100% !important; height: 100% !important; }
+            
+            #root, .min-h-screen {
+                width: 100% !important;
+                height: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                background: white !important;
+            }
+            .print-container { 
+                box-shadow: none !important; 
+                border: none !important; 
+                width: 100vw !important; 
+                height: 100vh !important; 
+                max-width: none !important; 
+                border-radius: 0 !important;
+                display: flex !important;
+                flex-direction: column !important;
+            }
+            .print-header {
+                padding: 10px 20px !important;
+                flex-shrink: 0; 
+            }
+            .chart-container {
+                padding: 0 20px 20px 20px !important;
+                flex-grow: 1 !important; 
+                height: auto !important; 
+                min-height: 0 !important; 
+            }
+            .recharts-wrapper, .recharts-responsive-container { 
+                width: 100% !important; 
+                height: 100% !important; 
+                max-height: none !important;
+            }
+        }
+        .custom-checkbox {
+            accent-color: #FA8072;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans transition-colors duration-300">
+    
+    <!-- PANTALLA DE BLOQUEO INTEGRADA -->
+    <div id="landscape-warning">
+        <div class="lw-line"></div>
+        <div class="lw-text">
+            <div>POR FAVOR</div>
+            <div>GIRA</div>
+            <div>TU TELÉFONO</div>
+        </div>
+        <div class="lw-phone"></div>
+    </div>
+
+    <!-- CONTENIDO PRINCIPAL -->
+    <div id="main-content">
+        <div id="root"></div>
+    </div>
+
+    <script type="text/babel">
+        const React = window.React;
+        const ReactDOM = window.ReactDOM;
+        const Recharts = window.Recharts;
+        const { 
+            LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
+            Legend, ResponsiveContainer, ReferenceLine, LabelList, ReferenceDot 
+        } = Recharts;
+
+        const { useState, useRef, useEffect, useMemo } = React;
+
+        // --- ICONOS ---
+        const IconActivity = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>);
+        const IconDownload = ({ size = 24 }) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>);
+        const IconPlusCircle = ({ size = 24 }) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>);
+        const IconSave = ({ size = 18 }) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>);
+        const IconX = ({ size = 24 }) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>);
+        const IconSun = ({ size = 20 }) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>);
+        const IconMoon = ({ size = 20 }) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>);
+        const IconEye = ({ size = 20 }) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>);
+        const IconEyeOff = ({ size = 20 }) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>);
+        const IconChevronDown = ({ size = 16 }) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>);
+        const IconTruck = ({ size = 20 }) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>);
+        const IconExcavatorSimple = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="2" y="6" width="20" height="8" rx="1"/><path d="M17 14v7"/><path d="M7 14v7"/><path d="M17 3v3"/><path d="M7 3v3"/><path d="M10 14 2.3 6.3"/><path d="m14 14 7.7-7.7"/><path d="m8 6 8 8"/></svg>);
+        const IconLayers = ({ size = 20 }) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>);
+
+        const COLORS = { high: '#ef4444', mid: '#eab308', low: '#0f766e', neutral: '#cbd5e1', salmon: '#FA8072', truck: '#60a5fa', teal: '#14b8a6', oeste: '#6366f1' };
+        
+        // --- CLAVE NUEVA PARA REINICIAR DATOS CON ESTRUCTURA EXACTA (v9) ---
+        const STORAGE_KEY = 'humedad_pilas_v9_landscape_lock'; 
+
+        // --- DATOS MAESTROS DEFINITIVOS (CARGADOS DE TU LISTA EXACTA) ---
+        const MASTER_DATA_ESTE = [
+            {module: "1", distancia: 17.83}, {module: "2", distancia: 27.84}, {module: "3", distancia: 28.02}, {module: "4", distancia: 28.03},
+            {module: "5", distancia: 28.02}, {module: "6", distancia: 27.85}, {module: "7", distancia: 28.08}, {module: "8", distancia: 28.02},
+            {module: "9", distancia: 28.02}, {module: "10", distancia: 27.89}, {module: "11", distancia: 27.54}, {module: "12", distancia: 28.06},
+            {module: "13", distancia: 27.92}, {module: "14", distancia: 28.02}, {module: "15", distancia: 28.0}, {module: "16", distancia: 27.84},
+            {module: "17", distancia: 28.17}, {module: "18", distancia: 27.95}, {module: "19", distancia: 27.73}, {module: "20", distancia: 27.77},
+            {module: "21", distancia: 28.18}, {module: "22", distancia: 27.86}, {module: "23", distancia: 27.99}, {module: "24", distancia: 27.84},
+            {module: "25", distancia: 28.07}, {module: "26", distancia: 27.88}, {module: "27", distancia: 28.23}, {module: "28", distancia: 27.8},
+            {module: "29", distancia: 28.01}, {module: "30", distancia: 27.93}, {module: "31", distancia: 27.75}, {module: "32", distancia: 27.89},
+            {module: "33", distancia: 28.19}, {module: "34", distancia: 28.09}, {module: "35", distancia: 27.93}, {module: "36", distancia: 27.96},
+            {module: "37", distancia: 28.1}, {module: "38", distancia: 28.1}, {module: "39", distancia: 27.95}, {module: "40", distancia: 28.04},
+            {module: "41", distancia: 27.77}, {module: "42", distancia: 27.95}, {module: "43", distancia: 27.64}, {module: "44", distancia: 27.96},
+            {module: "45", distancia: 28.03}, {module: "46", distancia: 27.99}, 
+            {module: "46-A", distancia: 28.4}, {module: "46-B", distancia: 28.0}, {module: "46-C", distancia: 27.6}, 
+            {module: "46-D", distancia: 28.1}, {module: "46-E", distancia: 20.3}
+        ];
+        
+        const MASTER_DATA_OESTE = [
+            {module: "47A", distancia: 21.5}, {module: "47B", distancia: 28.0}, {module: "47C", distancia: 28.0}, {module: "47D", distancia: 28.0}, {module: "47E", distancia: 28.0},
+            {module: "47", distancia: 25.95}, {module: "48", distancia: 27.9}, {module: "49", distancia: 28.15}, {module: "50", distancia: 27.8},
+            {module: "51", distancia: 27.81}, {module: "52", distancia: 28.3}, {module: "53", distancia: 27.94}, {module: "54", distancia: 28.3},
+            {module: "55", distancia: 28.06}, {module: "56", distancia: 25.57}, {module: "57", distancia: 27.87}, {module: "58", distancia: 28.32},
+            {module: "59", distancia: 27.83}, {module: "60", distancia: 28.02}, {module: "61", distancia: 27.78}, {module: "62", distancia: 28.04},
+            {module: "63", distancia: 27.8}, {module: "64", distancia: 28.03}, {module: "65", distancia: 27.86}, {module: "66", distancia: 35.15},
+            {module: "67", distancia: 27.9}, {module: "68", distancia: 27.92}, {module: "69", distancia: 27.8}, {module: "70", distancia: 28.25},
+            {module: "71", distancia: 27.58}, {module: "72", distancia: 28.55}, {module: "73", distancia: 27.82}, {module: "74", distancia: 27.94},
+            {module: "75", distancia: 27.87}, {module: "76", distancia: 28.18}, {module: "77", distancia: 27.76}, {module: "78", distancia: 28.06},
+            {module: "79", distancia: 27.75}, {module: "80", distancia: 28.03}, {module: "81", distancia: 27.95}, {module: "82", distancia: 28.35},
+            {module: "83", distancia: 27.23}, {module: "84", distancia: 27.85}, {module: "85", distancia: 27.84}, {module: "86", distancia: 27.9},
+            {module: "87", distancia: 27.87}, {module: "88", distancia: 28.15}, {module: "89", distancia: 27.6}, {module: "90", distancia: 30.42},
+            {module: "91", distancia: 27.82}, {module: "92", distancia: 16.4}
+        ];
+
+        const getModuleDistance = (pile, module) => {
+            const data = pile === 'ESTE' ? MASTER_DATA_ESTE : MASTER_DATA_OESTE;
+            const found = data.find(item => item.module === module);
+            return found ? found.distancia : '-';
+        };
+
+        const METERS_TICKS = [
+            { value: 4, label: 'OG1A' },
+            { value: 36, label: 'OG1B' },
+            { value: 76, label: 'OG2' },
+            { value: 116, label: 'OG3' },
+            { value: 156, label: 'OG4' },
+            { value: 196, label: 'OG5' },
+            { value: 232, label: 'OG6' } 
+        ];
+
+        const CustomYAxisTick = ({ x, y, payload, showHumidity, themeColor }) => {
+            if (showHumidity) {
+                return (
+                    <g transform={`translate(${x},${y})`}>
+                        <text x={0} y={0} dy={4} textAnchor="end" fill={themeColor} fontSize={11} fontWeight="500">
+                            {payload.value}%
+                        </text>
+                    </g>
+                );
+            }
+            const tickData = METERS_TICKS.find(t => t.value === payload.value);
+            if (!tickData) {
+                return (
+                    <g transform={`translate(${x},${y})`}>
+                        <text x={-6} y={0} dy={4} textAnchor="end" fill={themeColor} fontSize={10} opacity={0.6}>
+                            {payload.value}m
+                        </text>
+                    </g>
+                );
+            }
+            return (
+                <g transform={`translate(${x},${y})`}>
+                    <text x={-6} y={-3} textAnchor="end" fill={themeColor} fontSize={10} fontWeight="bold" style={{textTransform: 'uppercase'}}>
+                        {tickData.label}
+                    </text>
+                    <text x={-6} y={7} textAnchor="end" fill={themeColor} fontSize={9} opacity={0.7} fontFamily="monospace">
+                        {tickData.value}m
+                    </text>
+                </g>
+            );
+        };
+
+        const CustomDot = (props) => {
+            const { cx, cy, payload } = props;
+            if (payload.humedad === null || payload.humedad === undefined) return null;
+            let fill = COLORS.low;
+            if (payload.humedad > 16) fill = COLORS.high;
+            else if (payload.humedad >= 15) fill = COLORS.mid;
+            return <circle cx={cx} cy={cy} r={6} fill={fill} stroke="none" filter="url(#floatingShadow)" />;
+        };
+
+        const CustomTooltip = ({ active, payload, label, fullData, lastValidModule, activePile }) => {
+            if (active && payload && payload.length) {
+                const currentData = payload[0].payload;
+                
+                if (payload[0].dataKey === 'corte') {
+                    const activeColor = COLORS.salmon;
+                    return (
+                         <div className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-md text-slate-800 dark:text-white p-2 rounded-lg shadow-xl border" style={{borderColor: activeColor}}>
+                            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Corte Rotopala</p>
+                            <div className="flex items-center gap-2">
+                                <span className="font-bold text-sm" style={{color: activeColor}}>Módulo {currentData.module}</span>
+                                <span className="font-mono font-bold text-slate-800 dark:text-white">{currentData.corte}m</span>
+                            </div>
+                        </div>
+                    );
+                }
+
+                const isLastRegistered = currentData.module === lastValidModule;
+
+                if (!isLastRegistered) {
+                    return (
+                        <div className="bg-slate-200/95 dark:bg-slate-700/95 backdrop-blur-sm text-slate-800 dark:text-white text-[10px] py-1.5 px-2.5 rounded shadow-lg border border-slate-300 dark:border-slate-600 transition-colors">
+                            <p className="font-bold text-slate-500 dark:text-slate-300 mb-0.5 uppercase tracking-wider text-[9px]">Módulo {currentData.module}</p>
+                            <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                    <span className="font-bold text-sm text-slate-800 dark:text-white">
+                                        {currentData.humedad !== null ? `${currentData.humedad}%` : 'Sin dato'}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[9px] text-slate-500 dark:text-slate-400 border-t border-slate-300 dark:border-slate-600 pt-1 mt-0.5">
+                                    <span>Dist: </span>
+                                    <span className="font-mono font-bold">{currentData.distancia}m</span>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+
+                const currentIndex = fullData.findIndex(d => d.module === currentData.module);
+                const itemsToShow = [];
+                itemsToShow.push({ mod: currentData.module, val: currentData.humedad, highlight: true });
+                if (currentIndex > 0) {
+                    const prev1 = fullData[currentIndex - 1];
+                    itemsToShow.push({ mod: prev1.module, val: prev1.humedad, highlight: false });
+                }
+                if (currentIndex > 1) {
+                    const prev2 = fullData[currentIndex - 2];
+                    itemsToShow.push({ mod: prev2.module, val: prev2.humedad, highlight: false });
+                }
+
+                return (
+                    <div className="bg-slate-200/95 dark:bg-slate-800/95 backdrop-blur-md text-slate-800 dark:text-white p-2 rounded-lg shadow-2xl border border-slate-300 dark:border-slate-600 min-w-[110px] transition-colors">
+                        <div className="border-b border-slate-300 dark:border-slate-600 pb-1 mb-1 flex justify-between items-center">
+                            <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Últimos Registros</span>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            {itemsToShow.map((item, idx) => (
+                                <div key={idx} className={`flex justify-between items-center ${item.highlight ? 'opacity-100' : 'opacity-60'}`}>
+                                    <span className="text-[10px] text-slate-600 dark:text-slate-400 font-medium">Mód {item.mod}</span>
+                                    <span className={`text-xs ${item.highlight ? 'font-bold text-slate-900 dark:text-white bg-white dark:bg-slate-700 px-1 rounded shadow-sm' : 'font-semibold'}`}>
+                                        {item.val !== null ? item.val + '%' : '-'}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="border-t border-slate-300 dark:border-slate-600 mt-1 pt-1 text-[9px] text-center text-slate-500">
+                             Distancia Mód: <span className="font-mono font-bold">{currentData.distancia}m</span>
+                        </div>
+                    </div>
+                );
+            }
+            return null;
+        };
+
+        const generateInitialState = () => {
+            // Mapeo directo de los datos maestros para crear el estado inicial
+            const dataEste = MASTER_DATA_ESTE.map(item => ({
+                module: item.module,
+                distancia: item.distancia,
+                humedad: null,
+                corte: null
+            }));
+
+            const dataOeste = MASTER_DATA_OESTE.map(item => ({
+                module: item.module,
+                distancia: item.distancia,
+                humedad: null,
+                corte: null
+            }));
+
+            // Simulación de datos iniciales solo para demo visual
+            const demoIndexEste = dataEste.findIndex(d => d.module === '25');
+            if (demoIndexEste >= 0) dataEste[demoIndexEste].corte = 50;
+
+            return {
+                ESTE: {
+                    data: dataEste,
+                    rotopala: { module: '25', progress: 50, meters: 50, trucksMeters: 182 }
+                },
+                OESTE: {
+                    data: dataOeste,
+                    rotopala: { module: '47A', progress: 0, meters: 0, trucksMeters: 232 }
+                }
+            };
+        };
+
+        const loadState = () => {
+            try {
+                const savedState = localStorage.getItem(STORAGE_KEY);
+                if (savedState) {
+                    const parsedState = JSON.parse(savedState);
+                    
+                    const freshState = generateInitialState();
+                    
+                    ['ESTE', 'OESTE'].forEach(pile => {
+                        if (parsedState[pile] && parsedState[pile].data) {
+                            freshState[pile].data = freshState[pile].data.map(freshItem => {
+                                const savedItem = parsedState[pile].data.find(s => s.module === freshItem.module);
+                                if (savedItem) {
+                                    return {
+                                        ...freshItem, 
+                                        humedad: savedItem.humedad, 
+                                        corte: savedItem.corte
+                                    };
+                                }
+                                return freshItem;
+                            });
+                            if (parsedState[pile].rotopala) {
+                                freshState[pile].rotopala = parsedState[pile].rotopala;
+                            }
+                        }
+                    });
+                    return freshState;
+                }
+            } catch (error) { console.error("Error loading state:", error); }
+            return generateInitialState();
+        };
+
+        function App() {
+            const [fullState, setFullState] = useState(loadState);
+            const [activePile, setActivePile] = useState('ESTE'); 
+            const [activeModal, setActiveModal] = useState('none');
+            
+            const [showHumidity, setShowHumidity] = useState(true);
+            const [showReferenceLines, setShowReferenceLines] = useState(true); 
+            const [showMenu, setShowMenu] = useState(false); 
+            
+            const [darkMode, setDarkMode] = useState(() => {
+                const savedTheme = localStorage.getItem('theme');
+                return savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            });
+
+            const currentData = fullState[activePile].data;
+            const currentRotopala = fullState[activePile].rotopala;
+            
+            const activeColor = COLORS.salmon;
+
+            const chartTextColor = darkMode ? '#94a3b8' : '#64748b';
+            const chartGridColor = darkMode ? '#334155' : '#e2e8f0';
+            const chartAxisColor = darkMode ? '#f8fafc' : '#1e293b';
+
+            const chartRef = useRef(null);
+            
+            const [selectedModule, setSelectedModule] = useState('');
+            const [inputHumidity, setInputHumidity] = useState('');
+            
+            const [inputRotopalaModule, setInputRotopalaModule] = useState('');
+            const [inputRotopalaProgress, setInputRotopalaProgress] = useState('');
+            const [inputRotopalaMeters, setInputRotopalaMeters] = useState(0);
+            const [remainingTrucksMeters, setRemainingTrucksMeters] = useState(0);
+
+            useEffect(() => {
+                if (currentData.length > 0) {
+                    setSelectedModule(currentData[0].module);
+                }
+            }, [activePile]);
+
+            useEffect(() => {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(fullState));
+            }, [fullState]);
+
+            useEffect(() => {
+                localStorage.setItem('theme', darkMode ? 'dark' : 'light');
+            }, [darkMode]);
+
+            useEffect(() => {
+                const rMeters = parseFloat(inputRotopalaMeters) || 0;
+                setRemainingTrucksMeters((232 - rMeters).toFixed(1));
+            }, [inputRotopalaMeters]);
+
+            useEffect(() => {
+                if (activeModal === 'rotopala') {
+                    const moduleData = currentData.find(d => d.module === inputRotopalaModule);
+                    const savedCorte = moduleData && moduleData.corte !== null ? moduleData.corte : 0;
+                    // Aquí se usa el corte guardado del módulo, no la global
+                    // Pero la posición global se lee del estado global rotopala
+                    setInputRotopalaMeters(currentRotopala.meters); // Cargar el metro GLOBAL guardado
+                }
+            }, [inputRotopalaModule, activeModal, currentData, currentRotopala]);
+
+            const toggleTheme = () => setDarkMode(!darkMode);
+            const toggleHumidity = () => setShowHumidity(!showHumidity);
+
+            const lastValidModule = useMemo(() => {
+                for (let i = currentData.length - 1; i >= 0; i--) {
+                    if (currentData[i].humedad !== null && currentData[i].humedad !== undefined) {
+                        return currentData[i].module;
+                    }
+                }
+                return null;
+            }, [currentData]);
+
+            const handleSaveData = (e) => {
+                e.preventDefault();
+                
+                const newFullState = { ...fullState };
+                const pileState = { ...newFullState[activePile] };
+                let newData = [...pileState.data];
+                let newRotopala = { ...pileState.rotopala };
+
+                if (activeModal === 'humidity') {
+                    newData = newData.map(item => {
+                        if (item.module === selectedModule) {
+                            const val = inputHumidity === '' || parseFloat(inputHumidity) === 0 ? null : parseFloat(inputHumidity);
+                            return { ...item, humedad: val };
+                        }
+                        return item;
+                    });
+                } else if (activeModal === 'rotopala') {
+                    const rMeters = parseFloat(inputRotopalaMeters) || 0;
+                    
+                    newRotopala = {
+                        module: inputRotopalaModule,
+                        progress: parseFloat(inputRotopalaProgress) || 0,
+                        meters: rMeters,
+                        trucksMeters: 232 - rMeters
+                    };
+
+                    newData = newData.map(item => {
+                        if (item.module === inputRotopalaModule) {
+                            // CORRECCIÓN: Guardamos los metros GLOBALES (0-232m) en el historial de corte,
+                            // no el avance local del módulo.
+                            return { ...item, corte: rMeters };
+                        }
+                        return item;
+                    });
+                }
+
+                pileState.data = newData;
+                pileState.rotopala = newRotopala;
+                newFullState[activePile] = pileState;
+                
+                setFullState(newFullState);
+                setActiveModal('none');
+            };
+
+            const openHumidityModal = () => {
+                const currentVal = currentData.find(d => d.module === selectedModule)?.humedad;
+                setInputHumidity(currentVal === null ? '' : currentVal);
+                setActiveModal('humidity');
+            };
+
+            const openRotopalaModal = () => {
+                setInputRotopalaModule(currentRotopala.module);
+                setInputRotopalaProgress(currentRotopala.progress);
+                setActiveModal('rotopala');
+            };
+
+            const handleModuleChange = (e) => {
+                const mod = e.target.value;
+                setSelectedModule(mod);
+                const currentVal = currentData.find(d => d.module === mod)?.humedad;
+                setInputHumidity(currentVal === null ? '' : currentVal);
+            };
+
+            const handlePrint = () => window.print();
+            
+            const { offset16, offset15 } = (() => {
+                const max = 20; const min = 0; const range = max - min;
+                return { offset16: (max - 16) / range, offset15: (max - 15) / range };
+            })();
+
+            const { offset15_rev, offset16_rev } = (() => {
+                const max = 20; const min = 0; const range = max - min;
+                return { offset15_rev: (15 - min) / range, offset16_rev: (16 - min) / range };
+            })();
+
+            return (
+                <div className={darkMode ? 'dark' : ''}>
+                    <div className="min-h-screen p-6 flex flex-col items-center transition-colors duration-300 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 print:bg-white print:p-0">
+                        <div className="w-full max-w-[1400px] bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden print-container transition-colors duration-300">
+                            
+                            <div className="flex border-b border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900">
+                                <button 
+                                    onClick={() => setActivePile('ESTE')}
+                                    className={`flex-1 py-3 text-sm font-bold tracking-wider transition-colors flex items-center justify-center gap-2 ${activePile === 'ESTE' ? 'bg-slate-900 dark:bg-slate-950 text-salmon border-t-4 border-salmon' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'}`}
+                                >
+                                    <IconLayers size={16}/> PILA ESTE
+                                </button>
+                                <button 
+                                    onClick={() => setActivePile('OESTE')}
+                                    className={`flex-1 py-3 text-sm font-bold tracking-wider transition-colors flex items-center justify-center gap-2 ${activePile === 'OESTE' ? 'bg-slate-900 dark:bg-slate-950 text-indigo-500 border-t-4 border-indigo-500' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'}`}
+                                >
+                                    <IconLayers size={16}/> PILA OESTE
+                                </button>
+                            </div>
+
+                            <div className="bg-slate-900 dark:bg-slate-950 text-white p-6 flex justify-between items-center print:bg-white print:text-slate-900 print:border-b print:border-slate-300 transition-colors print-header">
+                                <div className="flex items-center gap-8">
+                                    <div>
+                                        <h2 className="text-2xl font-bold flex items-center gap-2">
+                                            <IconActivity className={activePile === 'ESTE' ? "text-emerald-400" : "text-indigo-400"} />
+                                            Perfil de Humedad
+                                        </h2>
+                                        <p className="text-slate-400 text-sm mt-1 print:text-slate-500 font-bold uppercase tracking-wider">
+                                            {activePile === 'ESTE' ? 'Monitoreo Pila Este' : 'Monitoreo Pila Oeste'}
+                                        </p>
+                                    </div>
+                                    
+                                    <div 
+                                        onClick={openRotopalaModal}
+                                        className="hidden md:flex items-center gap-4 bg-slate-800/50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-700/50 no-print cursor-pointer hover:bg-slate-700 dark:hover:bg-slate-800 transition-all group shadow-sm hover:shadow-md"
+                                        title="Clic para editar posición y avance"
+                                    >
+                                        <div className={`p-2 rounded-lg text-white transition-colors ${activePile === 'ESTE' ? 'bg-salmon group-hover:bg-salmon-dark' : 'bg-indigo-500 group-hover:bg-indigo-600'}`}>
+                                            <IconExcavatorSimple className="w-6 h-6" />
+                                        </div>
+                                        <div>
+                                            <p className={`text-[10px] font-bold uppercase tracking-wider mb-0.5 transition-colors ${activePile === 'ESTE' ? 'text-slate-400 group-hover:text-salmon' : 'text-slate-400 group-hover:text-indigo-400'}`}>Estado Rotopala</p>
+                                            <div className="flex items-center gap-3">
+                                                <div>
+                                                    <span className="text-xs text-slate-500 mr-1">Módulo:</span>
+                                                    <span className={`text-lg font-bold ${activePile === 'ESTE' ? 'text-salmon' : 'text-indigo-400'}`}>{currentRotopala.module}</span>
+                                                </div>
+                                                <div className="h-4 w-px bg-slate-700"></div>
+                                                <div>
+                                                    <span className="text-xs text-slate-500 mr-1">Avance:</span>
+                                                    <span className="text-lg font-bold text-white">{currentRotopala.progress}m</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2 no-print items-center">
+                                    <button onClick={openHumidityModal} className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors border border-emerald-600 text-sm shadow-sm" title="Ingresar datos de humedad">
+                                        <IconPlusCircle size={18} /> 
+                                        <span className="hidden sm:inline">Ingreso</span>
+                                    </button>
+
+                                    <div className="relative">
+                                        <div className="flex bg-slate-800 rounded-lg border border-slate-700 overflow-hidden mr-1">
+                                            <button 
+                                                onClick={toggleHumidity} 
+                                                className="p-2 hover:bg-slate-700 text-slate-200 border-r border-slate-700 transition-colors" 
+                                                title={showHumidity ? "Ocultar Humedad" : "Mostrar Humedad"}
+                                            >
+                                                {showHumidity ? <IconEye size={20} /> : <IconEyeOff size={20} />}
+                                            </button>
+                                            <button 
+                                                onClick={() => setShowMenu(!showMenu)} 
+                                                className="p-2 hover:bg-slate-700 text-slate-200 transition-colors"
+                                                title="Opciones de visualización"
+                                            >
+                                                <IconChevronDown size={16} />
+                                            </button>
+                                        </div>
+
+                                        {showMenu && (
+                                            <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 p-2 transform origin-top-right transition-all">
+                                                <label className="flex items-center gap-2 p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded cursor-pointer select-none">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={showReferenceLines} 
+                                                        onChange={(e) => setShowReferenceLines(e.target.checked)}
+                                                        className="custom-checkbox rounded text-salmon focus:ring-salmon w-4 h-4"
+                                                    />
+                                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Líneas Rotopala</span>
+                                                </label>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <button onClick={toggleTheme} className="p-2 rounded-full bg-slate-800 hover:bg-slate-700 text-yellow-400 border border-slate-700 transition-colors mr-2">
+                                        {darkMode ? <IconSun /> : <IconMoon />}
+                                    </button>
+                                    <button onClick={handlePrint} className="bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors border border-slate-600 text-sm">
+                                        <IconDownload size={18} /> <span className="hidden sm:inline">PDF</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="p-6 h-[600px] print:h-[600px] chart-container" ref={chartRef}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={currentData} margin={{ top: 20, right: 30, left: 10, bottom: 60 }}>
+                                        <defs>
+                                            <filter id="floatingShadow" x="-50%" y="-50%" width="200%" height="200%">
+                                                <feDropShadow dx="0" dy="3" stdDeviation="2" floodColor="#000000" floodOpacity="0.35"/>
+                                            </filter>
+                                            <linearGradient id="splitColor" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset={0} stopColor={COLORS.high} />
+                                                <stop offset={offset16} stopColor={COLORS.high} />
+                                                <stop offset={offset16} stopColor={COLORS.mid} />
+                                                <stop offset={offset15} stopColor={COLORS.mid} />
+                                                <stop offset={offset15} stopColor={COLORS.low} />
+                                                <stop offset={1} stopColor={COLORS.low} />
+                                            </linearGradient>
+                                            <linearGradient id="splitColorReverse" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset={0} stopColor={COLORS.low} />
+                                                <stop offset={offset15_rev} stopColor={COLORS.low} />
+                                                <stop offset={offset15_rev} stopColor={COLORS.mid} />
+                                                <stop offset={offset16_rev} stopColor={COLORS.mid} />
+                                                <stop offset={offset16_rev} stopColor={COLORS.high} />
+                                                <stop offset={1} stopColor={COLORS.high} />
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={true} stroke={chartGridColor} />
+                                        
+                                        <XAxis 
+                                            dataKey="module" 
+                                            reversed={activePile === 'OESTE'}
+                                            interval={0} 
+                                            tick={{ fontSize: 10, fill: chartTextColor }} 
+                                            angle={-90} 
+                                            textAnchor="end" 
+                                            height={60} 
+                                            label={{ value: `Módulos Pila ${activePile === 'ESTE' ? 'Este' : 'Oeste'}`, position: 'insideBottom', offset: -40, fill: chartAxisColor, fontWeight: 'bold' }} 
+                                        />
+                                        
+                                        <YAxis 
+                                            yAxisId="left"
+                                            reversed={activePile === 'OESTE'} 
+                                            domain={showHumidity ? [0, 20] : [0, 240]} 
+                                            ticks={!showHumidity ? [4, 36, 76, 116, 156, 196, 232] : undefined}
+                                            interval={0} 
+                                            tick={<CustomYAxisTick showHumidity={showHumidity} themeColor={chartTextColor} />}
+                                            width={60} 
+                                            label={{ 
+                                                value: showHumidity ? '% Humedad' : 'Metros', 
+                                                angle: -90, 
+                                                position: 'insideLeft', 
+                                                fill: chartTextColor,
+                                                offset: 0
+                                            }} 
+                                        />
+
+                                        <YAxis 
+                                            yAxisId="right"
+                                            reversed={activePile === 'OESTE'}
+                                            orientation="right"
+                                            domain={[0, 240]} 
+                                            hide={true} 
+                                        />
+
+                                        <Tooltip content={<CustomTooltip fullData={currentData} lastValidModule={lastValidModule} activePile={activePile} />} cursor={{ stroke: chartTextColor, strokeWidth: 1, strokeDasharray: '4 4' }} />
+                                        <Legend verticalAlign="top" height={36} wrapperStyle={{ color: chartTextColor }}/>
+                                        
+                                        {showReferenceLines && (
+                                            <>
+                                                <Line 
+                                                    yAxisId="right"
+                                                    type="stepAfter" 
+                                                    dataKey="corte" 
+                                                    stroke={activeColor} 
+                                                    strokeWidth={2}
+                                                    dot={{ r: 3, fill: activeColor, strokeWidth: 0 }}
+                                                    activeDot={{ r: 5, stroke: '#fff', strokeWidth: 2 }}
+                                                    name="Corte Rotopala"
+                                                    connectNulls={true}
+                                                    isAnimationActive={false}
+                                                />
+
+                                                <ReferenceLine 
+                                                    yAxisId="right"
+                                                    segment={[
+                                                        { x: currentRotopala.module, y: 0 },
+                                                        { x: currentRotopala.module, y: currentRotopala.meters }
+                                                    ]}
+                                                    stroke={COLORS.teal} 
+                                                    strokeWidth={2} 
+                                                    strokeDasharray="3 3"
+                                                    label={{ 
+                                                        value: 'ROTOPALA ACTUAL', 
+                                                        position: 'insideTop', 
+                                                        angle: -90,
+                                                        fill: COLORS.teal, 
+                                                        fontSize: 7, 
+                                                        fontWeight: 'bold',
+                                                        offset: 20
+                                                    }}
+                                                />
+                                            </>
+                                        )}
+
+                                        {showHumidity && (
+                                            <>
+                                                <ReferenceLine yAxisId="left" y={16} label={{ value: 'Límite (16%)', position: 'insideTopRight', fill: COLORS.high, fontSize: 12 }} stroke={COLORS.high} strokeDasharray="3 3" opacity={0.5}/>
+                                                <ReferenceLine yAxisId="left" y={15} label={{ value: 'Base (15%)', position: 'insideTopRight', fill: COLORS.low, fontSize: 12 }} stroke={COLORS.low} strokeDasharray="3 3" opacity={0.5}/>
+                                                
+                                                <Line yAxisId="left" type="monotone" dataKey="humedad" stroke={activePile === 'OESTE' ? "url(#splitColorReverse)" : "url(#splitColor)"} strokeWidth={1.5} dot={<CustomDot />} activeDot={{ r: 7, stroke: '#fff', strokeWidth: 2 }} name="Humedad Real" connectNulls={false} isAnimationActive={false}>
+                                                    <LabelList dataKey="humedad" position="top" offset={10} style={{ fontSize: '9px', fill: chartTextColor, fontWeight: 600 }} />
+                                                </Line>
+                                            </>
+                                        )}
+
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {activeModal !== 'none' && (
+                            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 no-print p-4 overflow-y-auto">
+                                <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md p-6 transform transition-all scale-100 border border-slate-200 dark:border-slate-700 my-8">
+                                    <div className="flex justify-between items-center mb-6 border-b border-slate-100 dark:border-slate-700 pb-4">
+                                        <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                            {activeModal === 'humidity' ? (
+                                                <><IconActivity className="w-5 h-5 text-emerald-500" /> Ingreso de Humedad ({activePile})</>
+                                            ) : (
+                                                <><IconExcavatorSimple className={`w-5 h-5 ${activePile === 'ESTE' ? 'text-salmon' : 'text-indigo-500'}`} /> Avance Rotopala ({activePile})</>
+                                            )}
+                                        </h3>
+                                        <button onClick={() => setActiveModal('none')} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"><IconX /></button>
+                                    </div>
+                                    
+                                    <form onSubmit={handleSaveData} className="space-y-6">
+                                        
+                                        {activeModal === 'humidity' && (
+                                            <>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Seleccionar Módulo</label>
+                                                    <select value={selectedModule} onChange={handleModuleChange} className="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                                                        {currentData.map(item => <option key={item.module} value={item.module}>Módulo {item.module}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">% Humedad (Vacío = Borrar)</label>
+                                                    <div className="relative">
+                                                        <input type="number" step="0.1" min="0" max="100" value={inputHumidity} placeholder="Sin dato" onChange={(e) => setInputHumidity(e.target.value)} autoFocus className="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white rounded-lg px-3 py-2 pl-3 focus:ring-2 focus:ring-blue-500 outline-none font-mono text-lg placeholder:text-slate-300 dark:placeholder:text-slate-500"/>
+                                                        <span className="absolute right-3 top-2.5 text-slate-400 font-bold">%</span>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+
+                                        {activeModal === 'rotopala' && (
+                                            <div className={`p-5 rounded-xl border space-y-5 ${activePile === 'ESTE' ? 'bg-salmon/10 border-salmon/30' : 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800'}`}>
+                                                
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="col-span-1">
+                                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Módulo Actual</label>
+                                                        <select value={inputRotopalaModule} onChange={(e) => setInputRotopalaModule(e.target.value)} className={`w-full border bg-white dark:bg-slate-700 text-slate-900 dark:text-white rounded-lg px-3 py-2.5 focus:ring-2 outline-none text-sm font-bold ${activePile === 'ESTE' ? 'border-salmon/50 focus:ring-salmon' : 'border-indigo-300 dark:border-indigo-700 focus:ring-indigo-500'}`}>
+                                                            {currentData.map(item => <option key={item.module} value={item.module}>Módulo {item.module}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    
+                                                    <div className="col-span-1">
+                                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Avance (Largo / Actual)</label>
+                                                        <div className="flex rounded-lg shadow-sm overflow-hidden h-[42px]">
+                                                            <div className="relative w-1/2 bg-slate-200 dark:bg-slate-800 border-y border-l border-slate-300 dark:border-slate-600 rounded-l-lg flex flex-col justify-center items-center group" title="Largo total según Excel">
+                                                                <span className="font-mono text-sm font-bold text-slate-500 dark:text-slate-400">
+                                                                    {getModuleDistance(activePile, inputRotopalaModule)}
+                                                                </span>
+                                                                <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider leading-none mt-0.5">Max (m)</span>
+                                                            </div>
+                                                            <div className="relative w-1/2">
+                                                                <input 
+                                                                    type="number" step="0.1" min="0" 
+                                                                    value={inputRotopalaProgress} placeholder="0" 
+                                                                    onChange={(e) => setInputRotopalaProgress(e.target.value)} 
+                                                                    className={`w-full h-full border-y border-r rounded-r-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white px-2 pt-1 pb-4 outline-none font-mono text-sm font-bold text-center focus:ring-2 focus:z-10 relative ${activePile === 'ESTE' ? 'border-salmon/50 focus:ring-salmon' : 'border-indigo-300 dark:border-indigo-700 focus:ring-indigo-500'}`}
+                                                                />
+                                                                <span className="absolute bottom-1 left-0 w-full text-[8px] text-center text-emerald-500 font-bold uppercase tracking-wider pointer-events-none">Actual</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className={`bg-white dark:bg-slate-700/50 p-3 rounded-lg border ${activePile === 'ESTE' ? 'border-salmon/30' : 'border-indigo-200 dark:border-indigo-800'}`}>
+                                                        <label className={`flex items-center gap-1 text-xs font-bold mb-1 ${activePile === 'ESTE' ? 'text-salmon' : 'text-indigo-500'}`}>
+                                                            <IconExcavatorSimple className="w-4 h-4" /> Rotopala
+                                                        </label>
+                                                        <div className="relative">
+                                                            <input 
+                                                                type="number" step="1" min="0" max="232"
+                                                                value={inputRotopalaMeters} placeholder="0" 
+                                                                onChange={(e) => setInputRotopalaMeters(e.target.value)} 
+                                                                className={`w-full border-b bg-transparent text-slate-900 dark:text-white px-1 py-1 outline-none font-mono text-lg font-bold ${activePile === 'ESTE' ? 'border-salmon/30 focus:border-salmon' : 'border-indigo-300 focus:border-indigo-500'}`}
+                                                            />
+                                                            <span className={`absolute right-1 top-2 text-xs font-bold ${activePile === 'ESTE' ? 'text-salmon/50' : 'text-indigo-400/50'}`}>m</span>
+                                                        </div>
+                                                        <p className="text-[9px] text-slate-400 mt-1 leading-tight">Posición global (0-232m)</p>
+                                                    </div>
+
+                                                    <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-600">
+                                                        <label className="flex items-center gap-1 text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">
+                                                            <IconTruck size={14} /> Camiones
+                                                        </label>
+                                                        <div className="relative">
+                                                            <input 
+                                                                type="number" 
+                                                                value={remainingTrucksMeters} 
+                                                                disabled
+                                                                className="w-full border-b border-slate-300 dark:border-slate-500 bg-transparent text-slate-600 dark:text-slate-300 px-1 py-1 outline-none font-mono text-lg font-bold cursor-not-allowed"
+                                                            />
+                                                            <span className="absolute right-1 top-2 text-xs text-slate-400 font-bold">m</span>
+                                                        </div>
+                                                        <p className="text-[9px] text-slate-400 mt-1 leading-tight">Calculado (232m - Rotopala)</p>
+                                                    </div>
+                                                </div>
+                                                
+                                            </div>
+                                        )}
+
+                                        <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-700 mt-6">
+                                            <button type="button" onClick={() => setActiveModal('none')} className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 font-medium transition-colors">Cancelar</button>
+                                            <button type="submit" className={`flex-1 px-4 py-2 text-white rounded-lg font-bold flex justify-center items-center gap-2 transition-colors shadow-lg ${activeModal === 'humidity' ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/30' : (activePile === 'ESTE' ? 'bg-salmon hover:bg-salmon-dark shadow-salmon/30' : 'bg-indigo-500 hover:bg-indigo-600 shadow-indigo-500/30')}`}>
+                                                <IconSave size={18} /> 
+                                                {activeModal === 'humidity' ? 'Guardar Humedad' : 'Guardar Avance'}
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
